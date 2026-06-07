@@ -156,6 +156,14 @@
   .act.full{grid-column:1/-1}
   .hint{font-size:.74rem;color:var(--muted);margin-top:8px;text-align:center;line-height:1.5}
 
+
+  /* Sync badge */
+  .sync-bar{display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 0 4px;font-size:.78rem;font-weight:600;color:var(--muted);transition:color .3s}
+  .sync-bar.syncing{color:var(--gold)}
+  .sync-bar.ok{color:var(--emerald)}
+  .sync-bar.err{color:#b4451f}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+
   @media(min-width:560px){
     .stats{grid-template-columns:repeat(3,1fr)}
     .hero h1{font-size:2.1rem}
@@ -176,6 +184,7 @@
     </div>
   </header>
 
+  <div class="sync-bar" id="syncBar"><span class="sync-dot"></span><span id="syncTxt">Chargement…</span></div>
   <div class="progress-card">
     <div class="progress-top">
       <span class="lbl">Progression des versements</span>
@@ -263,6 +272,7 @@
   }
   function save(){
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+    if (window.__onStateChange) window.__onStateChange(state);
   }
 
   const fmt = n => Math.round(n).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g,' ') + ' F';
@@ -409,6 +419,11 @@
     }
   };
 
+  window.__tontineRerender = function(){
+    // Recharger l'état depuis localStorage (mis à jour par le script de sync)
+    try{ const fresh=JSON.parse(localStorage.getItem(STORE_KEY)); if(fresh){state=Object.assign(defaultState(),fresh);} }catch(e){}
+    render();
+  };
   render();
 })();
 
@@ -528,6 +543,154 @@
   // PWA install support if served over http(s)
   if('serviceWorker'in navigator && location.protocol.startsWith('http')){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+
+<script>
+/* ===== SYNC SERVEUR + WEB PUSH ===== */
+(function(){
+  "use strict";
+  const VAPID_PUBLIC_KEY = 'BEB71-Y5e6eabl9QGVLHjw2SymrA-BaXo5MmWwXXIXqz4MYDpOKpuMAsL86W2g_tooOyOABW7Hmguj7y0nXuqH4';
+  const syncBar = document.getElementById('syncBar');
+  const syncTxt = document.getElementById('syncTxt');
+
+  function setSyncStatus(state, msg){
+    syncBar.className = 'sync-bar ' + state;
+    syncTxt.textContent = msg;
+  }
+
+  // ---- Sync state avec le serveur ----
+  let syncTimer = null;
+  function scheduleSync(data){
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(()=> pushState(data), 800);
+  }
+
+  async function pushState(data){
+    setSyncStatus('syncing','Synchronisation…');
+    try {
+      const r = await fetch('/api/state', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      setSyncStatus('ok','✓ Synchronisé sur tous les appareils');
+    } catch(e){
+      setSyncStatus('err','⚠ Hors-ligne — données locales');
+    }
+  }
+
+  async function loadServerState(){
+    try {
+      const r = await fetch('/api/state');
+      if (!r.ok) throw new Error();
+      const serverState = await r.json();
+      // Fusionner : le serveur a toujours priorité sauf si localStorage est plus récent
+      const localRaw = localStorage.getItem('tontine_premium_v1');
+      const local = localRaw ? JSON.parse(localRaw) : null;
+      // Compter les checks pour comparer
+      const countChecks = s => Object.values(s.paid||{}).filter(Boolean).length;
+      const serverMore = !local || countChecks(serverState) >= countChecks(local);
+      const merged = serverMore ? serverState : local;
+      // Toujours écrire le plus récent en local + serveur
+      localStorage.setItem('tontine_premium_v1', JSON.stringify(merged));
+      if (!serverMore) await pushState(merged);
+      setSyncStatus('ok','✓ Synchronisé');
+      // Déclencher un re-render si la page a déjà rendu avec d'autres données
+      if (window.__tontineRerender) window.__tontineRerender();
+    } catch(e){
+      setSyncStatus('err','Hors-ligne — données locales uniquement');
+    }
+  }
+
+  // Écouter les changements d'état déclenchés par le tracker
+  window.__onStateChange = function(data){ scheduleSync(data); };
+
+  // Sync au chargement
+  loadServerState();
+
+  // Re-sync quand l'app revient au premier plan
+  document.addEventListener('visibilitychange', ()=>{
+    if (!document.hidden) loadServerState();
+  });
+
+  // ---- Web Push VAPID ----
+  function urlBase64ToUint8Array(base64String){
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g,'+').replace(/_/g,'/');
+    const raw = window.atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  async function subscribePush(){
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      }
+      // Envoyer la subscription au serveur
+      await fetch('/api/subscribe', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(sub.toJSON())
+      });
+      return true;
+    } catch(e){
+      console.warn('Push subscription failed:', e.message);
+      return false;
+    }
+  }
+
+  async function unsubscribePush(){
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await fetch('/api/subscribe', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+      await sub.unsubscribe();
+    }
+  }
+
+  // Hook sur le bouton bell existant
+  const bellBtn = document.getElementById('bellBtn');
+  const bellHint = document.getElementById('bellHint');
+  if (bellBtn) {
+    const origClick = bellBtn.onclick;
+    bellBtn.onclick = null;
+    bellBtn.addEventListener('click', async function(){
+      if (!('Notification' in window)){ alert("Ton navigateur ne supporte pas les notifications. Sur iPhone : installe l'app depuis Safari (Partager → Sur l'écran d'accueil) puis réessaie."); return; }
+      const isOn = localStorage.getItem('tontine_reminders_on') === '1';
+      if (isOn){
+        localStorage.setItem('tontine_reminders_on','0');
+        await unsubscribePush();
+        bellBtn.classList.remove('on'); bellBtn.textContent='🔔 Activer les rappels';
+        bellHint.textContent = "Rappels désactivés.";
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted'){
+        bellHint.textContent = "Notifications refusées. Autorise-les dans Réglages > Safari > Notifications.";
+        return;
+      }
+      localStorage.setItem('tontine_reminders_on','1');
+      const pushOk = await subscribePush();
+      bellBtn.classList.add('on'); bellBtn.textContent='🔔 Rappels activés';
+      if (pushOk){
+        bellHint.textContent = "✅ Push activé — tu recevras les notifs à 8h, 13h et 20h même app fermée, sur TOUS tes appareils.";
+        // Notif test immédiate
+        new Notification('🔔 Ma Tontine', {body:"Rappels push activés ! Tu seras notifié chaque jour.",icon:'/icons/icon-192.png'});
+      } else {
+        bellHint.textContent = "✓ Rappels in-app activés. Pour les notifs même app fermée sur iPhone, installe l'app depuis Safari (Partager → Sur l'écran d'accueil).";
+      }
+    });
+  }
+
+  // Enregistrer le SW si pas encore fait
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
   }
 })();
 </script>
