@@ -184,6 +184,7 @@ const SECRET=()=>process.env.WEBHOOK_SECRET||process.env.NOTIFY_KEY||'hook';
 const checkKey=req=>!process.env.NOTIFY_KEY||(req.query.key||req.headers['x-notify-key'])===process.env.NOTIFY_KEY;
 
 app.get('/health',(_,res)=>res.send('🤖 Tontine OK'));
+app.get('/ping',(_,res)=>res.json({ok:true,ts:Date.now()})); // keepalive cron-job.org
 app.get('/preview',(req,res)=>res.type('text/html').send(buildMessage(req.query.slot).replace(/\n/g,'<br>')));
 
 // ---- STATE API (cross-device sync) ----

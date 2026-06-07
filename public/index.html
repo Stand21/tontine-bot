@@ -557,8 +557,8 @@
   // ---- Refresh button ----
   document.getElementById('refreshBtn').addEventListener('click', async () => {
     const btn = document.getElementById('refreshBtn');
-    btn.textContent = '⏳ Actualisation…'; btn.disabled = true;
-    await loadServerState();
+    btn.textContent = '⏳ Réveil du serveur…'; btn.disabled = true;
+    await loadServerState(false);
     btn.textContent = '🔄 Actualiser depuis le serveur'; btn.disabled = false;
   });
 
@@ -567,19 +567,31 @@
   function scheduleSync(data){ clearTimeout(syncTimer); syncTimer = setTimeout(()=>pushState(data), 800); }
 
   async function pushState(data){
-    setSyncStatus('syncing','Synchronisation…');
+    setSyncStatus('syncing','Sauvegarde…');
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=> ctrl.abort(), 8000);
     try {
-      const r = await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      const r = await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:ctrl.signal});
+      clearTimeout(tid);
       if(!r.ok) throw new Error('HTTP '+r.status);
-      setSyncStatus('ok','✓ Synchronisé sur tous les appareils');
-    } catch(e){ setSyncStatus('err','⚠ Hors-ligne — données locales'); }
+      setSyncStatus('ok','✓ Sauvegardé — ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
+    } catch(e){
+      clearTimeout(tid);
+      setSyncStatus('err','⚠ Sauvegarde en attente (serveur en réveil)');
+      // Retry dans 20s
+      setTimeout(()=> pushState(data), 20000);
+    }
   }
 
-  async function loadServerState(){
-    setSyncStatus('syncing','Chargement…');
+  async function loadServerState(silent){
+    if(!silent) setSyncStatus('syncing','Synchronisation…');
+    // Timeout 7s — si Render est en veille, on n'attend pas
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=> ctrl.abort(), 7000);
     try {
-      const r = await fetch('/api/state');
-      if(!r.ok) throw new Error();
+      const r = await fetch('/api/state', {signal: ctrl.signal});
+      clearTimeout(tid);
+      if(!r.ok) throw new Error('HTTP '+r.status);
       const serverState = await r.json();
       const localRaw = localStorage.getItem('tontine_premium_v1');
       const local = localRaw ? JSON.parse(localRaw) : null;
@@ -588,15 +600,26 @@
       const merged = serverMore ? serverState : local;
       localStorage.setItem('tontine_premium_v1', JSON.stringify(merged));
       if(!serverMore) await pushState(merged);
-      setSyncStatus('ok','✓ Synchronisé');
+      setSyncStatus('ok','✓ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
       if(window.__tontineRerender) window.__tontineRerender();
-    } catch(e){ setSyncStatus('err','Hors-ligne — données locales uniquement'); }
+    } catch(e){
+      clearTimeout(tid);
+      if(e.name==='AbortError'){
+        setSyncStatus('err','⏳ Serveur en réveil — données locales affichées');
+        // Retry silencieux dans 15s (le temps que Render se réveille)
+        setTimeout(()=> loadServerState(true), 15000);
+      } else {
+        setSyncStatus('err','⚠ Hors-ligne — données locales');
+        setTimeout(()=> loadServerState(true), 30000);
+      }
+    }
   }
 
   window.__onStateChange = function(data){ scheduleSync(data); };
 
-  // Sync initial + visibilitychange
-  loadServerState();
+  // Sync initial : afficher données locales immédiatement, sync en arrière-plan
+  setSyncStatus('syncing','Données locales · synchronisation…');
+  loadServerState(true);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadServerState(); });
 
   // ---- WEB PUSH VAPID ----
