@@ -1,24 +1,52 @@
-const CACHE = 'tontine-v2';
-const ASSETS = ['./', '/index.html', '/manifest.json', '/icons/icon-192.png'];
+// Version 3 — force remplacement de l'ancien cache
+const CACHE = 'tontine-v3';
+const ASSETS = ['/', '/index.html', '/manifest.json', '/icons/icon-192.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(() => {}));
+  // skipWaiting force l'activation immédiate même si d'anciens onglets sont ouverts
   self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(() => {}));
 });
+
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-  ));
-  self.clients.claim();
-});
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
+  // Supprimer TOUS les anciens caches
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => {
+        console.log('[SW] Suppression ancien cache:', k);
+        return caches.delete(k);
+      }))
+    ).then(() => {
+      // Prendre le contrôle de TOUS les onglets ouverts immédiatement
+      return self.clients.claim();
+    })
   );
 });
 
-// ===== PUSH NOTIFICATIONS =====
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+
+  // Les appels API ne passent JAMAIS par le cache — toujours réseau
+  if (url.pathname.startsWith('/api/') || url.pathname === '/health' || url.pathname === '/ping') {
+    e.respondWith(fetch(e.request));
+    return;
+  }
+
+  // Pour les assets : réseau en priorité, cache en fallback (network-first)
+  e.respondWith(
+    fetch(e.request)
+      .then(res => {
+        // Mettre à jour le cache avec la nouvelle version
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
+  );
+});
+
+// Push notifications
 self.addEventListener('push', e => {
   let data = { title: '🔔 Ma Tontine', body: 'Rappel de cotisation', url: '/' };
   try { if (e.data) data = { ...data, ...e.data.json() }; } catch (_) {}

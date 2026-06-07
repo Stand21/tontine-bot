@@ -580,9 +580,36 @@
     btn.textContent = '⏳ Réveil du serveur…'; btn.disabled = true;
     document.getElementById('debugPanel').style.display = 'block';
     logInfo('Actualisation manuelle demandée');
+    // Vérifier si un SW en attente peut être activé
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(reg && reg.waiting){
+        logInfo('SW en attente détecté → activation forcée');
+        reg.waiting.postMessage({type:'SKIP_WAITING'});
+      }
+    }
     await loadServerState(false);
     btn.textContent = '🔄 Actualiser depuis le serveur'; btn.disabled = false;
   });
+
+  // Bouton vider cache (solution de dernier recours pour onglets bloqués)
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'act full'; clearBtn.style.cssText='background:#b4451f;color:#fff;margin-top:8px';
+  clearBtn.textContent = '🗑 Vider le cache et recharger';
+  clearBtn.addEventListener('click', async () => {
+    logInfo('Vidage du cache SW…');
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const r of regs){ await r.unregister(); logOk('SW dés-enregistré'); }
+    }
+    if('caches' in window){
+      const keys = await caches.keys();
+      for(const k of keys){ await caches.delete(k); logOk('Cache supprimé: '+k); }
+    }
+    logInfo('Rechargement dans 1s…');
+    setTimeout(()=> window.location.reload(true), 1000);
+  });
+  document.getElementById('debugPanel').parentNode.insertBefore(clearBtn, document.getElementById('debugPanel').nextSibling);
 
   // ---- pushState ----
   let syncTimer = null;
@@ -769,10 +796,29 @@
     });
   }
 
-  if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
-    navigator.serviceWorker.register('/sw.js')
-      .then(()=>logOk('Service Worker enregistré'))
-      .catch(e=>logErr('SW registration: '+e.message));
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      logOk('Service Worker enregistré — version: tontine-v3');
+
+      // Quand un nouveau SW est trouvé, forcer son activation immédiate
+      reg.addEventListener('updatefound', () => {
+        logInfo('Nouveau Service Worker détecté → activation en cours…');
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', () => {
+          logInfo('SW state: ' + newWorker.state);
+        });
+      });
+    }).catch(e => logErr('SW registration: '+e.message));
+
+    // Quand le nouveau SW prend le contrôle → recharger la page automatiquement
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if(refreshing) return;
+      refreshing = true;
+      logInfo('Nouveau SW actif → rechargement automatique de la page…');
+      // Petit délai pour que les logs s'affichent
+      setTimeout(() => window.location.reload(true), 800);
+    });
   }
 })();
 </script>
