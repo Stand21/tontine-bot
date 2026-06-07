@@ -194,7 +194,11 @@
     </div>
   </header>
 
-  <div class="sync-bar" id="syncBar"><span class="sync-dot"></span><span id="syncTxt">Chargement…</span></div>
+  <div class="sync-bar" id="syncBar" onclick="document.getElementById('debugPanel').style.display=document.getElementById('debugPanel').style.display==='none'?'block':'none'" style="cursor:pointer">
+    <span class="sync-dot"></span><span id="syncTxt">Chargement…</span>
+    <span style="font-size:.7rem;opacity:.6;margin-left:6px">[logs]</span>
+  </div>
+  <div id="debugPanel" style="display:none;background:#0d1117;color:#7ee787;font-family:monospace;font-size:.72rem;padding:10px 12px;border-radius:10px;margin-top:6px;max-height:200px;overflow-y:auto;line-height:1.6"></div>
   <div class="progress-card">
     <div class="progress-top">
       <span class="lbl">Progression des versements</span>
@@ -548,6 +552,22 @@
   const VAPID_PUBLIC_KEY = 'BEB71-Y5e6eabl9QGVLHjw2SymrA-BaXo5MmWwXXIXqz4MYDpOKpuMAsL86W2g_tooOyOABW7Hmguj7y0nXuqH4';
   const syncBar = document.getElementById('syncBar');
   const syncTxt = document.getElementById('syncTxt');
+  const debugEl = document.getElementById('debugPanel');
+
+  // ---- Logger visible dans l'app ----
+  function log(msg, color){
+    const t = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const line = document.createElement('div');
+    line.style.color = color||'#7ee787';
+    line.textContent = `[${t}] ${msg}`;
+    debugEl.appendChild(line);
+    debugEl.scrollTop = debugEl.scrollHeight;
+    console.log(`[Tontine] ${msg}`);
+  }
+  function logWarn(msg){ log('⚠ '+msg,'#e3b341'); }
+  function logErr(msg) { log('✗ '+msg,'#f85149'); }
+  function logOk(msg)  { log('✓ '+msg,'#56d364'); }
+  function logInfo(msg){ log('ℹ '+msg,'#79c0ff'); }
 
   function setSyncStatus(state, msg){
     syncBar.className = 'sync-bar ' + state;
@@ -558,177 +578,201 @@
   document.getElementById('refreshBtn').addEventListener('click', async () => {
     const btn = document.getElementById('refreshBtn');
     btn.textContent = '⏳ Réveil du serveur…'; btn.disabled = true;
+    document.getElementById('debugPanel').style.display = 'block';
+    logInfo('Actualisation manuelle demandée');
     await loadServerState(false);
     btn.textContent = '🔄 Actualiser depuis le serveur'; btn.disabled = false;
   });
 
-  // ---- Sync state avec le serveur ----
+  // ---- pushState ----
   let syncTimer = null;
-  function scheduleSync(data){ clearTimeout(syncTimer); syncTimer = setTimeout(()=>pushState(data), 800); }
+  function scheduleSync(data){ clearTimeout(syncTimer); syncTimer = setTimeout(()=> pushState(data), 800); }
 
   async function pushState(data){
     setSyncStatus('syncing','Sauvegarde…');
+    log('POST /api/state …');
     const ctrl = new AbortController();
-    const tid = setTimeout(()=> ctrl.abort(), 8000);
+    const tid = setTimeout(()=>{ ctrl.abort(); logErr('POST timeout (8s)'); }, 8000);
     try {
       const r = await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:ctrl.signal});
       clearTimeout(tid);
+      logInfo(`POST status: ${r.status}`);
       if(!r.ok) throw new Error('HTTP '+r.status);
-      setSyncStatus('ok','✓ Sauvegardé — ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
+      const json = await r.json();
+      logOk('État sauvegardé sur le serveur: '+JSON.stringify(json));
+      setSyncStatus('ok','✓ Sauvegardé — '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
     } catch(e){
       clearTimeout(tid);
-      setSyncStatus('err','⚠ Sauvegarde en attente (serveur en réveil)');
-      // Retry dans 20s
-      setTimeout(()=> pushState(data), 20000);
+      logErr('pushState échoué: '+e.message);
+      setSyncStatus('err','⚠ Sauvegarde en attente (retry dans 20s)');
+      setTimeout(()=>{ logInfo('Retry pushState…'); pushState(data); }, 20000);
     }
   }
 
+  // ---- loadServerState ----
   async function loadServerState(silent){
     if(!silent) setSyncStatus('syncing','Synchronisation…');
-    // Timeout 7s — si Render est en veille, on n'attend pas
+    logInfo('GET /api/state (timeout 7s)…');
     const ctrl = new AbortController();
-    const tid = setTimeout(()=> ctrl.abort(), 7000);
+    const tid = setTimeout(()=>{ ctrl.abort(); logErr('GET /api/state timeout (7s) — Render probablement en veille'); }, 7000);
     try {
-      const r = await fetch('/api/state', {signal: ctrl.signal});
+      const r = await fetch('/api/state',{signal:ctrl.signal});
       clearTimeout(tid);
+      logInfo(`GET /api/state → status ${r.status}`);
       if(!r.ok) throw new Error('HTTP '+r.status);
       const serverState = await r.json();
+      logOk('State reçu du serveur: '+JSON.stringify(serverState).slice(0,120)+'…');
       const localRaw = localStorage.getItem('tontine_premium_v1');
       const local = localRaw ? JSON.parse(localRaw) : null;
       const countChecks = s => Object.values(s.paid||{}).filter(Boolean).length;
-      const serverMore = !local || countChecks(serverState) >= countChecks(local);
+      const sc = countChecks(serverState), lc = local ? countChecks(local) : -1;
+      logInfo(`Checks serveur: ${sc}, checks local: ${lc}`);
+      const serverMore = !local || sc >= lc;
       const merged = serverMore ? serverState : local;
+      logInfo(`Source retenue: ${serverMore ? 'SERVEUR' : 'LOCAL'}`);
       localStorage.setItem('tontine_premium_v1', JSON.stringify(merged));
-      if(!serverMore) await pushState(merged);
-      setSyncStatus('ok','✓ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
-      if(window.__tontineRerender) window.__tontineRerender();
+      if(!serverMore){ logInfo('Local > serveur → push local vers serveur'); await pushState(merged); }
+      setSyncStatus('ok','✓ Synchronisé — '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
+      if(window.__tontineRerender){ logInfo('Re-render déclenché'); window.__tontineRerender(); }
     } catch(e){
       clearTimeout(tid);
       if(e.name==='AbortError'){
-        setSyncStatus('err','⏳ Serveur en réveil — données locales affichées');
-        // Retry silencieux dans 15s (le temps que Render se réveille)
-        setTimeout(()=> loadServerState(true), 15000);
+        logWarn('Timeout — Render en veille. Retry dans 15s…');
+        setSyncStatus('err','⏳ Serveur en réveil — retry dans 15s');
+        setTimeout(()=>{ logInfo('Retry automatique (post-timeout)…'); loadServerState(true); }, 15000);
       } else {
+        logErr('loadServerState: '+e.message);
         setSyncStatus('err','⚠ Hors-ligne — données locales');
-        setTimeout(()=> loadServerState(true), 30000);
+        setTimeout(()=>{ logInfo('Retry automatique (erreur réseau)…'); loadServerState(true); }, 30000);
       }
     }
   }
 
-  window.__onStateChange = function(data){ scheduleSync(data); };
+  window.__onStateChange = function(data){
+    logInfo('State changé localement → schedule sync');
+    scheduleSync(data);
+  };
 
-  // Sync initial : afficher données locales immédiatement, sync en arrière-plan
-  setSyncStatus('syncing','Données locales · synchronisation…');
+  // ---- Init ----
+  setSyncStatus('syncing','Données locales · sync en cours…');
+  logInfo('App démarrée — début sync serveur');
+  logInfo('VAPID_PUBLIC_KEY: '+VAPID_PUBLIC_KEY.slice(0,20)+'…');
+
+  // Vérifier la config serveur au démarrage
+  fetch('/api/push-status').then(r=>r.json()).then(d=>{
+    logInfo(`push-status: vapid=${d.vapid}, redis=${d.redis}, subs=${d.count}`);
+    if(!d.redis) logErr('Redis NON configuré sur le serveur !');
+    if(!d.vapid) logErr('VAPID NON configuré sur le serveur !');
+  }).catch(e=> logWarn('push-status injoignable: '+e.message));
+
   loadServerState(true);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadServerState(); });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ logInfo('App revenue au premier plan → sync'); loadServerState(true); } });
 
   // ---- WEB PUSH VAPID ----
   function urlBase64ToUint8Array(b64){
-    const pad = '='.repeat((4-b64.length%4)%4);
-    const raw = atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+    const pad='='.repeat((4-b64.length%4)%4);
+    const raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
     return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
   }
-
-  function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+  function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true; }
 
   async function updatePushDiag(){
-    const card = document.getElementById('pushStatusCard');
-    card.style.display = 'block';
-    function setRow(id, cls, txt){ const r=document.getElementById(id); r.className='ps-row '+cls; document.getElementById(id+'-txt').textContent=txt; }
-
-    // Standalone
-    const standalone = isStandalone();
-    setRow('ps-standalone', standalone?'ok':'warn', standalone ? '✓ App installée en mode standalone' : '⚠ Pas encore installée comme app — Safari → Partager → Sur l'écran d'accueil');
-
-    // Permission
-    const perm = Notification.permission;
-    setRow('ps-perm', perm==='granted'?'ok':perm==='denied'?'err':'warn',
-      perm==='granted'?'✓ Permission accordée':perm==='denied'?'✗ Permission refusée — active dans Réglages':'⚠ Permission non encore demandée');
-
-    // Subscription locale
-    let sub = null;
-    if('serviceWorker' in navigator && 'PushManager' in window){
-      try { const reg=await navigator.serviceWorker.ready; sub=await reg.pushManager.getSubscription(); } catch(e){}
-    }
-    setRow('ps-sub', sub?'ok':'warn', sub?'✓ Subscription push active sur cet appareil':'⚠ Pas de subscription — appuie sur 🔔 pour activer');
-
-    // Vérif serveur
+    const card=document.getElementById('pushStatusCard'); card.style.display='block';
+    function setRow(id,cls,txt){ const r=document.getElementById(id); r.className='ps-row '+cls; document.getElementById(id+'-txt').textContent=txt; }
+    const standalone=isStandalone();
+    setRow('ps-standalone',standalone?'ok':'warn',standalone?'✓ App installée (standalone)':'⚠ Pas encore installée — Safari → Partager → Sur l\'écran d\'accueil');
+    const perm=Notification.permission;
+    setRow('ps-perm',perm==='granted'?'ok':perm==='denied'?'err':'warn',perm==='granted'?'✓ Permission accordée':perm==='denied'?'✗ Refusée — active dans Réglages':'⚠ Non demandée');
+    let sub=null;
+    if('serviceWorker' in navigator&&'PushManager' in window){ try{ const reg=await navigator.serviceWorker.ready; sub=await reg.pushManager.getSubscription(); }catch(e){} }
+    setRow('ps-sub',sub?'ok':'warn',sub?'✓ Subscription active sur cet appareil':'⚠ Pas de subscription — appuie sur 🔔');
     if(sub){
-      try {
-        const r=await fetch('/api/push-status'); const d=await r.json();
-        setRow('ps-server','ok',`✓ ${d.count} appareil(s) enregistré(s) sur le serveur`);
-      } catch(e){ setRow('ps-server','warn','Impossible de vérifier le serveur'); }
-    } else {
-      setRow('ps-server','warn','En attente de subscription');
-    }
+      try{ const r=await fetch('/api/push-status'); const d=await r.json(); setRow('ps-server','ok',`✓ ${d.count} appareil(s) enregistré(s) · redis=${d.redis}`); }
+      catch(e){ setRow('ps-server','warn','Serveur injoignable'); }
+    } else { setRow('ps-server','warn','En attente de subscription'); }
   }
 
   async function subscribePush(){
-    if(!('serviceWorker' in navigator)||!('PushManager' in window)) return false;
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){ logErr('PushManager non disponible'); return false; }
     try {
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if(!sub){
-        sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+      logInfo('serviceWorker.ready…');
+      const reg=await navigator.serviceWorker.ready;
+      logOk('SW ready');
+      let sub=await reg.pushManager.getSubscription();
+      if(sub){ logInfo('Subscription existante trouvée'); }
+      else {
+        logInfo('Création nouvelle subscription…');
+        sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+        logOk('Subscription créée: '+sub.endpoint.slice(0,60)+'…');
       }
-      const r = await fetch('/api/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON())});
-      if(!r.ok) throw new Error('Erreur enregistrement');
+      logInfo('Envoi subscription au serveur…');
+      const r=await fetch('/api/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON())});
+      const json=await r.json();
+      logOk('Subscription enregistrée: '+JSON.stringify(json));
       return true;
-    } catch(e){ console.warn('Push subscription failed:',e.message); return false; }
+    } catch(e){ logErr('subscribePush: '+e.message); return false; }
   }
 
   async function unsubscribePush(){
     if(!('serviceWorker' in navigator)) return;
     const reg=await navigator.serviceWorker.ready;
     const sub=await reg.pushManager.getSubscription();
-    if(sub){
-      await fetch('/api/subscribe',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
-      await sub.unsubscribe();
-    }
+    if(sub){ await fetch('/api/subscribe',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})}); await sub.unsubscribe(); logOk('Subscription supprimée'); }
   }
 
-  // Bell button
-  const bellBtn=document.getElementById('bellBtn'), bellHint=document.getElementById('bellHint');
+  const bellBtn=document.getElementById('bellBtn'),bellHint=document.getElementById('bellHint');
   if(bellBtn){
-    bellBtn.onclick = null;
-    bellBtn.addEventListener('click', async function(){
+    bellBtn.onclick=null;
+    bellBtn.addEventListener('click',async function(){
+      document.getElementById('debugPanel').style.display='block';
+      logInfo('Bouton cloche cliqué');
+      logInfo('Notification in window: '+('Notification' in window));
+      logInfo('isStandalone: '+isStandalone());
       if(!('Notification' in window)){
-        alert("📱 Pour activer les notifs push sur iPhone :\n\n1. Appuie sur le bouton Partager ↑ (barre Safari en bas)\n2. Sélectionne 'Sur l\'écran d\'accueil'\n3. Ouvre l'app depuis l\'icône (pas depuis Safari)\n4. Appuie de nouveau sur 🔔\n\n⚠ iOS exige que l\'app soit installée (iOS 16.4+)");
+        logErr('API Notification absente → app non installée comme PWA');
+        alert("📱 Pour activer les notifs push sur iPhone :\n\n1. Bouton Partager ↑ (barre Safari en bas)\n2. 'Sur l'écran d'accueil' → Ajouter\n3. Ouvre l'app depuis l'icône (pas depuis Safari)\n4. Appuie de nouveau sur 🔔\n\n⚠ iOS 16.4+ requis");
         return;
       }
       if(!isStandalone()){
-        alert("📱 Pour activer les notifs push sur iPhone :\n\n1. Bouton Partager ↑ (barre Safari en bas)\n2. 'Sur l\'écran d\'accueil' → Ajouter\n3. Ouvre l\'app depuis l\'icône (pas depuis Safari)\n4. Appuie de nouveau sur 🔔 Activer les rappels\n\n⚠ Les notifs push nécessitent l\'app installée (iOS 16.4+)");
+        logWarn('Pas en mode standalone');
+        alert("📱 Pour les notifs push :\n\n1. Bouton Partager ↑ → 'Sur l'écran d'accueil'\n2. Ouvre depuis l'icône\n3. Appuie sur 🔔\n\n(nécessaire sur iOS)");
         await updatePushDiag(); return;
       }
-      const isOn = localStorage.getItem('tontine_reminders_on')==='1';
+      const isOn=localStorage.getItem('tontine_reminders_on')==='1';
       if(isOn){
+        logInfo('Désactivation des rappels');
         localStorage.setItem('tontine_reminders_on','0');
         await unsubscribePush();
         bellBtn.classList.remove('on'); bellBtn.textContent='🔔 Activer les rappels';
         bellHint.textContent='Rappels désactivés.';
         await updatePushDiag(); return;
       }
-      const perm = await Notification.requestPermission();
+      logInfo('Demande permission notification…');
+      const perm=await Notification.requestPermission();
+      logInfo('Permission: '+perm);
       if(perm!=='granted'){
-        bellHint.textContent='⚠ Notifications refusées. Va dans Réglages > Notifications > ton app, et active-les.';
+        logErr('Permission refusée');
+        bellHint.textContent='⚠ Notifications refusées. Réglages > Notifications > Ma Tontine.';
         await updatePushDiag(); return;
       }
       localStorage.setItem('tontine_reminders_on','1');
-      const pushOk = await subscribePush();
+      const pushOk=await subscribePush();
       bellBtn.classList.add('on'); bellBtn.textContent='🔔 Rappels activés';
       if(pushOk){
-        bellHint.textContent='✅ Push activé — les notifs arrivent en même temps que Telegram, sur tous les appareils.';
-        new Notification('✅ Ma Tontine',{body:'Push activé ! Notifs à 8h, 13h et 20h.',icon:'/icons/icon-192.png'});
+        bellHint.textContent='✅ Push activé — notifs à 8h, 13h et 20h sur tous les appareils.';
+        new Notification('✅ Ma Tontine',{body:'Push activé !',icon:'/icons/icon-192.png'});
+        logOk('Push complètement activé');
       } else {
-        bellHint.textContent='⚠ Push non activé. Vérifie la carte de diagnostic ci-dessous.';
+        bellHint.textContent='⚠ Push échoué — voir logs ci-dessus.';
       }
       await updatePushDiag();
     });
   }
 
-  // SW registration
-  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
-    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('/sw.js')
+      .then(()=>logOk('Service Worker enregistré'))
+      .catch(e=>logErr('SW registration: '+e.message));
   }
 })();
 </script>

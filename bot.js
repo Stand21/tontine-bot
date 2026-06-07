@@ -184,7 +184,38 @@ const SECRET=()=>process.env.WEBHOOK_SECRET||process.env.NOTIFY_KEY||'hook';
 const checkKey=req=>!process.env.NOTIFY_KEY||(req.query.key||req.headers['x-notify-key'])===process.env.NOTIFY_KEY;
 
 app.get('/health',(_,res)=>res.send('🤖 Tontine OK'));
-app.get('/ping',(_,res)=>res.json({ok:true,ts:Date.now()})); // keepalive cron-job.org
+app.get('/ping',(_,res)=>res.json({ok:true,ts:Date.now()})); // keepalive
+
+// ---- DEBUG COMPLET (test Redis + state + subs) ----
+app.get('/api/debug', async (_,res) => {
+  const out = { ts: new Date().toISOString(), env:{} };
+  out.env.TELEGRAM_TOKEN    = !!process.env.TELEGRAM_TOKEN;
+  out.env.TELEGRAM_CHAT_ID  = !!process.env.TELEGRAM_CHAT_ID;
+  out.env.VAPID_PUBLIC_KEY  = !!process.env.VAPID_PUBLIC_KEY;
+  out.env.VAPID_PRIVATE_KEY = !!process.env.VAPID_PRIVATE_KEY;
+  out.env.UPSTASH_URL       = !!process.env.UPSTASH_REDIS_REST_URL;
+  out.env.UPSTASH_TOKEN     = !!process.env.UPSTASH_REDIS_REST_TOKEN;
+  out.env.NOTIFY_KEY        = !!process.env.NOTIFY_KEY;
+  // Test Redis ping
+  try {
+    const pong = await redisCmd('PING');
+    out.redis = { ok: true, pong };
+  } catch(e) { out.redis = { ok: false, error: e.message }; }
+  // Lire l'état
+  try {
+    const s = await getState();
+    const paid = Object.values(s.paid||{}).filter(Boolean).length;
+    out.state = { ok: true, paid_checks: paid, recvAmt: s.recvAmt };
+  } catch(e) { out.state = { ok: false, error: e.message }; }
+  // Lire les subscriptions
+  try {
+    const subs = await getSubs();
+    out.subs = { ok: true, count: subs.length, endpoints: subs.map(s=>s.endpoint.slice(0,50)+'…') };
+  } catch(e) { out.subs = { ok: false, error: e.message }; }
+  // Test message preview
+  out.message_preview = buildMessage('matin').slice(0, 100) + '…';
+  res.json(out);
+});
 app.get('/preview',(req,res)=>res.type('text/html').send(buildMessage(req.query.slot).replace(/\n/g,'<br>')));
 
 // ---- STATE API (cross-device sync) ----
