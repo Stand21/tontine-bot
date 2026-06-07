@@ -230,7 +230,7 @@
     <div class="ps-row" id="ps-sub"><span class="dot"></span><span id="ps-sub-txt">Subscription push…</span></div>
     <div class="ps-row" id="ps-server"><span class="dot"></span><span id="ps-server-txt">Enregistrement serveur…</span></div>
   </div>
-  <div class="hint" id="bellHint">Rappels dans l'app quand elle est ouverte. Pour des notifications WhatsApp chaque jour même app fermée, déploie le mini-serveur fourni.</div>
+  <div class="hint" id="bellHint">📱 Pour les notifs push même app fermée : installe l'app (Safari → Partager ↑ → Sur l'écran d'accueil), puis tape sur la cloche.</div>
 
   <!-- STATS -->
   <div class="section-title"><span class="dot"></span>📊 Résumé automatique</div>
@@ -527,36 +527,12 @@
   });
 
   // In-app reminders (notifications while the page is open)
-  const RKEY='tontine_reminders_on', FKEY='tontine_lastfire';
-  const bell=document.getElementById('bellBtn'),hint=document.getElementById('bellHint');
-  function setBell(on){
-    if(on){bell.classList.add('on');bell.textContent='🔔 Rappels activés';
-      hint.textContent="Rappels actifs quand l'app est ouverte (8h · 13h · 20h). Garde-la épinglée à l'écran d'accueil. WhatsApp = canal fiable même fermée (voir mini-serveur).";}
-    else{bell.classList.remove('on');bell.textContent='🔔 Activer les rappels';}
+  // Gestion de la cloche déléguée au script sync+push (évite le double handler)
+  const bellEl = document.getElementById('bellBtn');
+  if(bellEl && localStorage.getItem('tontine_reminders_on')==='1'){
+    bellEl.classList.add('on'); bellEl.textContent='🔔 Rappels activés';
   }
-  function notify(){
-    const p=progress(),nd=nextDeadline();
-    const head = nd&&nd.diff===0 ? "🚨 Versement AUJOURD'HUI !" : (nd?`⏳ Échéance dans ${nd.diff} j`:"🎉 Tontine terminée");
-    const body = `${MOTI[dailyIndex()%MOTI.length]}\n(${p.pct}% — ${p.full}/${TOTAL} semaines)`;
-    try{new Notification(head,{body,icon:'icon.png',badge:'icon.png'});}catch(e){}
-  }
-  bell.addEventListener('click',async()=>{
-    if(!('Notification'in window)){alert("Ton navigateur ne supporte pas les notifications. Utilise plutôt WhatsApp/Telegram via le mini-serveur.");return;}
-    if(localStorage.getItem(RKEY)==='1'){localStorage.setItem(RKEY,'0');setBell(false);return;}
-    const perm=await Notification.requestPermission();
-    if(perm==='granted'){localStorage.setItem(RKEY,'1');setBell(true);notify();}
-    else hint.textContent="Notifications refusées. Tu peux les réautoriser dans les réglages du navigateur, ou passer par WhatsApp/Telegram.";
-  });
-  setBell(localStorage.getItem(RKEY)==='1');
-  // poll: fire once per scheduled hour per day, only when page open
-  setInterval(()=>{
-    if(localStorage.getItem(RKEY)!=='1')return;
-    const now=new Date(),h=now.getHours();
-    if(REMIND_HOURS.indexOf(h)===-1)return;
-    const slot=now.toDateString()+'-'+h;
-    if(localStorage.getItem(FKEY)===slot)return;
-    localStorage.setItem(FKEY,slot);notify();
-  },60000);
+  // polling in-app supprimé (remplacé par Web Push serveur)
 
   // PWA install support if served over http(s)
   if('serviceWorker'in navigator && location.protocol.startsWith('http')){
@@ -694,15 +670,11 @@
     bellBtn.onclick = null;
     bellBtn.addEventListener('click', async function(){
       if(!('Notification' in window)){
-        alert("⚠ Pour les notifications push sur iPhone : installe d'abord l'app (Safari → Partager → Sur l'écran d'accueil), puis reviens ici.");
+        alert("📱 Pour activer les notifs push sur iPhone :\n\n1. Appuie sur le bouton Partager ↑ (barre Safari en bas)\n2. Sélectionne 'Sur l\'écran d\'accueil'\n3. Ouvre l'app depuis l\'icône (pas depuis Safari)\n4. Appuie de nouveau sur 🔔\n\n⚠ iOS exige que l\'app soit installée (iOS 16.4+)");
         return;
       }
       if(!isStandalone()){
-        alert("📱 Pour que les notifs arrivent même app fermée, installe d'abord l'app :
-
-Safari → bouton Partager ↑ → 'Sur l'écran d'accueil' → Ajouter
-
-Ensuite rouvre l'app depuis l'icône et appuie de nouveau sur ce bouton.");
+        alert("📱 Pour activer les notifs push sur iPhone :\n\n1. Bouton Partager ↑ (barre Safari en bas)\n2. 'Sur l\'écran d\'accueil' → Ajouter\n3. Ouvre l\'app depuis l\'icône (pas depuis Safari)\n4. Appuie de nouveau sur 🔔 Activer les rappels\n\n⚠ Les notifs push nécessitent l\'app installée (iOS 16.4+)");
         await updatePushDiag(); return;
       }
       const isOn = localStorage.getItem('tontine_reminders_on')==='1';
