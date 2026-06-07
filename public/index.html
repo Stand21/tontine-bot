@@ -132,6 +132,16 @@
   .reset button{background:none;border:1px solid var(--line-strong);color:var(--muted);font-weight:600;font-size:.78rem;padding:8px 16px;border-radius:999px;cursor:pointer}
   .reset button:active{background:var(--ivory)}
 
+
+  .act.refresh{background:var(--ink-2);color:#fff}
+  .push-status{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-top:10px;font-size:.82rem}
+  .push-status .ps-title{font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .push-status .ps-row{display:flex;align-items:center;gap:8px;padding:4px 0;color:var(--muted);font-size:.8rem}
+  .push-status .ps-row .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .push-status .ps-row.ok .dot{background:var(--emerald)}
+  .push-status .ps-row.warn .dot{background:var(--gold)}
+  .push-status .ps-row.err .dot{background:#b4451f}
+
   /* Motivation + countdown */
   .duo{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
   .moti{background:linear-gradient(150deg,var(--ink),var(--ink-2));color:#fff;border-radius:var(--radius);padding:18px 18px;box-shadow:0 14px 34px rgba(19,33,63,.18);position:relative;overflow:hidden}
@@ -211,6 +221,14 @@
   <div class="actions">
     <button class="act bell" id="bellBtn">🔔 Activer les rappels</button>
     <button class="act wa" id="waBtn">🟢 Mon point sur WhatsApp</button>
+    <button class="act refresh full" id="refreshBtn">🔄 Actualiser depuis le serveur</button>
+  </div>
+  <div id="pushStatusCard" class="push-status" style="display:none">
+    <div class="ps-title">📡 État des notifications push</div>
+    <div class="ps-row" id="ps-standalone"><span class="dot"></span><span id="ps-standalone-txt">Vérification du mode d'affichage…</span></div>
+    <div class="ps-row" id="ps-perm"><span class="dot"></span><span id="ps-perm-txt">Permission notifications…</span></div>
+    <div class="ps-row" id="ps-sub"><span class="dot"></span><span id="ps-sub-txt">Subscription push…</span></div>
+    <div class="ps-row" id="ps-server"><span class="dot"></span><span id="ps-server-txt">Enregistrement serveur…</span></div>
   </div>
   <div class="hint" id="bellHint">Rappels dans l'app quand elle est ouverte. Pour des notifications WhatsApp chaque jour même app fermée, déploie le mini-serveur fourni.</div>
 
@@ -560,136 +578,161 @@
     syncTxt.textContent = msg;
   }
 
+  // ---- Refresh button ----
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.textContent = '⏳ Actualisation…'; btn.disabled = true;
+    await loadServerState();
+    btn.textContent = '🔄 Actualiser depuis le serveur'; btn.disabled = false;
+  });
+
   // ---- Sync state avec le serveur ----
   let syncTimer = null;
-  function scheduleSync(data){
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(()=> pushState(data), 800);
-  }
+  function scheduleSync(data){ clearTimeout(syncTimer); syncTimer = setTimeout(()=>pushState(data), 800); }
 
   async function pushState(data){
     setSyncStatus('syncing','Synchronisation…');
     try {
-      const r = await fetch('/api/state', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-      if (!r.ok) throw new Error('HTTP '+r.status);
+      const r = await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      if(!r.ok) throw new Error('HTTP '+r.status);
       setSyncStatus('ok','✓ Synchronisé sur tous les appareils');
-    } catch(e){
-      setSyncStatus('err','⚠ Hors-ligne — données locales');
-    }
+    } catch(e){ setSyncStatus('err','⚠ Hors-ligne — données locales'); }
   }
 
   async function loadServerState(){
+    setSyncStatus('syncing','Chargement…');
     try {
       const r = await fetch('/api/state');
-      if (!r.ok) throw new Error();
+      if(!r.ok) throw new Error();
       const serverState = await r.json();
-      // Fusionner : le serveur a toujours priorité sauf si localStorage est plus récent
       const localRaw = localStorage.getItem('tontine_premium_v1');
       const local = localRaw ? JSON.parse(localRaw) : null;
-      // Compter les checks pour comparer
       const countChecks = s => Object.values(s.paid||{}).filter(Boolean).length;
       const serverMore = !local || countChecks(serverState) >= countChecks(local);
       const merged = serverMore ? serverState : local;
-      // Toujours écrire le plus récent en local + serveur
       localStorage.setItem('tontine_premium_v1', JSON.stringify(merged));
-      if (!serverMore) await pushState(merged);
+      if(!serverMore) await pushState(merged);
       setSyncStatus('ok','✓ Synchronisé');
-      // Déclencher un re-render si la page a déjà rendu avec d'autres données
-      if (window.__tontineRerender) window.__tontineRerender();
-    } catch(e){
-      setSyncStatus('err','Hors-ligne — données locales uniquement');
-    }
+      if(window.__tontineRerender) window.__tontineRerender();
+    } catch(e){ setSyncStatus('err','Hors-ligne — données locales uniquement'); }
   }
 
-  // Écouter les changements d'état déclenchés par le tracker
   window.__onStateChange = function(data){ scheduleSync(data); };
 
-  // Sync au chargement
+  // Sync initial + visibilitychange
   loadServerState();
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadServerState(); });
 
-  // Re-sync quand l'app revient au premier plan
-  document.addEventListener('visibilitychange', ()=>{
-    if (!document.hidden) loadServerState();
-  });
+  // ---- WEB PUSH VAPID ----
+  function urlBase64ToUint8Array(b64){
+    const pad = '='.repeat((4-b64.length%4)%4);
+    const raw = atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+    return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+  }
 
-  // ---- Web Push VAPID ----
-  function urlBase64ToUint8Array(base64String){
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g,'+').replace(/_/g,'/');
-    const raw = window.atob(base64);
-    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+
+  async function updatePushDiag(){
+    const card = document.getElementById('pushStatusCard');
+    card.style.display = 'block';
+    function setRow(id, cls, txt){ const r=document.getElementById(id); r.className='ps-row '+cls; document.getElementById(id+'-txt').textContent=txt; }
+
+    // Standalone
+    const standalone = isStandalone();
+    setRow('ps-standalone', standalone?'ok':'warn', standalone ? '✓ App installée en mode standalone' : '⚠ Pas encore installée comme app — Safari → Partager → Sur l'écran d'accueil');
+
+    // Permission
+    const perm = Notification.permission;
+    setRow('ps-perm', perm==='granted'?'ok':perm==='denied'?'err':'warn',
+      perm==='granted'?'✓ Permission accordée':perm==='denied'?'✗ Permission refusée — active dans Réglages':'⚠ Permission non encore demandée');
+
+    // Subscription locale
+    let sub = null;
+    if('serviceWorker' in navigator && 'PushManager' in window){
+      try { const reg=await navigator.serviceWorker.ready; sub=await reg.pushManager.getSubscription(); } catch(e){}
+    }
+    setRow('ps-sub', sub?'ok':'warn', sub?'✓ Subscription push active sur cet appareil':'⚠ Pas de subscription — appuie sur 🔔 pour activer');
+
+    // Vérif serveur
+    if(sub){
+      try {
+        const r=await fetch('/api/push-status'); const d=await r.json();
+        setRow('ps-server','ok',`✓ ${d.count} appareil(s) enregistré(s) sur le serveur`);
+      } catch(e){ setRow('ps-server','warn','Impossible de vérifier le serveur'); }
+    } else {
+      setRow('ps-server','warn','En attente de subscription');
+    }
   }
 
   async function subscribePush(){
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)) return false;
     try {
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-        });
+      if(!sub){
+        sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
       }
-      // Envoyer la subscription au serveur
-      await fetch('/api/subscribe', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(sub.toJSON())
-      });
+      const r = await fetch('/api/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON())});
+      if(!r.ok) throw new Error('Erreur enregistrement');
       return true;
-    } catch(e){
-      console.warn('Push subscription failed:', e.message);
-      return false;
-    }
+    } catch(e){ console.warn('Push subscription failed:',e.message); return false; }
   }
 
   async function unsubscribePush(){
-    if (!('serviceWorker' in navigator)) return;
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (sub) {
-      await fetch('/api/subscribe', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+    if(!('serviceWorker' in navigator)) return;
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch('/api/subscribe',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
       await sub.unsubscribe();
     }
   }
 
-  // Hook sur le bouton bell existant
-  const bellBtn = document.getElementById('bellBtn');
-  const bellHint = document.getElementById('bellHint');
-  if (bellBtn) {
-    const origClick = bellBtn.onclick;
+  // Bell button
+  const bellBtn=document.getElementById('bellBtn'), bellHint=document.getElementById('bellHint');
+  if(bellBtn){
     bellBtn.onclick = null;
     bellBtn.addEventListener('click', async function(){
-      if (!('Notification' in window)){ alert("Ton navigateur ne supporte pas les notifications. Sur iPhone : installe l'app depuis Safari (Partager → Sur l'écran d'accueil) puis réessaie."); return; }
-      const isOn = localStorage.getItem('tontine_reminders_on') === '1';
-      if (isOn){
+      if(!('Notification' in window)){
+        alert("⚠ Pour les notifications push sur iPhone : installe d'abord l'app (Safari → Partager → Sur l'écran d'accueil), puis reviens ici.");
+        return;
+      }
+      if(!isStandalone()){
+        alert("📱 Pour que les notifs arrivent même app fermée, installe d'abord l'app :
+
+Safari → bouton Partager ↑ → 'Sur l'écran d'accueil' → Ajouter
+
+Ensuite rouvre l'app depuis l'icône et appuie de nouveau sur ce bouton.");
+        await updatePushDiag(); return;
+      }
+      const isOn = localStorage.getItem('tontine_reminders_on')==='1';
+      if(isOn){
         localStorage.setItem('tontine_reminders_on','0');
         await unsubscribePush();
         bellBtn.classList.remove('on'); bellBtn.textContent='🔔 Activer les rappels';
-        bellHint.textContent = "Rappels désactivés.";
-        return;
+        bellHint.textContent='Rappels désactivés.';
+        await updatePushDiag(); return;
       }
       const perm = await Notification.requestPermission();
-      if (perm !== 'granted'){
-        bellHint.textContent = "Notifications refusées. Autorise-les dans Réglages > Safari > Notifications.";
-        return;
+      if(perm!=='granted'){
+        bellHint.textContent='⚠ Notifications refusées. Va dans Réglages > Notifications > ton app, et active-les.';
+        await updatePushDiag(); return;
       }
       localStorage.setItem('tontine_reminders_on','1');
       const pushOk = await subscribePush();
       bellBtn.classList.add('on'); bellBtn.textContent='🔔 Rappels activés';
-      if (pushOk){
-        bellHint.textContent = "✅ Push activé — tu recevras les notifs à 8h, 13h et 20h même app fermée, sur TOUS tes appareils.";
-        // Notif test immédiate
-        new Notification('🔔 Ma Tontine', {body:"Rappels push activés ! Tu seras notifié chaque jour.",icon:'/icons/icon-192.png'});
+      if(pushOk){
+        bellHint.textContent='✅ Push activé — les notifs arrivent en même temps que Telegram, sur tous les appareils.';
+        new Notification('✅ Ma Tontine',{body:'Push activé ! Notifs à 8h, 13h et 20h.',icon:'/icons/icon-192.png'});
       } else {
-        bellHint.textContent = "✓ Rappels in-app activés. Pour les notifs même app fermée sur iPhone, installe l'app depuis Safari (Partager → Sur l'écran d'accueil).";
+        bellHint.textContent='⚠ Push non activé. Vérifie la carte de diagnostic ci-dessous.';
       }
+      await updatePushDiag();
     });
   }
 
-  // Enregistrer le SW si pas encore fait
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  // SW registration
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
   }
 })();

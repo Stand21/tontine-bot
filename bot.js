@@ -205,6 +205,14 @@ app.delete('/api/subscribe',async(req,res)=>{
   try { await removeSub(req.body.endpoint); res.json({ok:true}); } catch(e){ res.status(500).json({error:e.message}); }
 });
 
+// ---- PUSH STATUS (diagnostic) ----
+app.get('/api/push-status', async (_,res) => {
+  try {
+    const subs = await getSubs();
+    res.json({ ok:true, count:subs.length, vapid:!!process.env.VAPID_PUBLIC_KEY, redis:!!process.env.UPSTASH_REDIS_REST_URL });
+  } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+});
+
 // ---- NOTIFY (cron trigger) ----
 app.all('/notify',async(req,res)=>{
   if (!checkKey(req)) return res.status(401).json({ok:false,error:'Clé invalide'});
