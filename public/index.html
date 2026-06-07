@@ -592,24 +592,6 @@
     btn.textContent = '🔄 Actualiser depuis le serveur'; btn.disabled = false;
   });
 
-  // Bouton vider cache (solution de dernier recours pour onglets bloqués)
-  const clearBtn = document.createElement('button');
-  clearBtn.className = 'act full'; clearBtn.style.cssText='background:#b4451f;color:#fff;margin-top:8px';
-  clearBtn.textContent = '🗑 Vider le cache et recharger';
-  clearBtn.addEventListener('click', async () => {
-    logInfo('Vidage du cache SW…');
-    if('serviceWorker' in navigator){
-      const regs = await navigator.serviceWorker.getRegistrations();
-      for(const r of regs){ await r.unregister(); logOk('SW dés-enregistré'); }
-    }
-    if('caches' in window){
-      const keys = await caches.keys();
-      for(const k of keys){ await caches.delete(k); logOk('Cache supprimé: '+k); }
-    }
-    logInfo('Rechargement dans 1s…');
-    setTimeout(()=> window.location.reload(true), 1000);
-  });
-  document.getElementById('debugPanel').parentNode.insertBefore(clearBtn, document.getElementById('debugPanel').nextSibling);
 
   // ---- pushState ----
   let syncTimer = null;
@@ -797,28 +779,41 @@
   }
 
   if('serviceWorker' in navigator && location.protocol.startsWith('http')){
-    navigator.serviceWorker.register('/sw.js').then(reg => {
-      logOk('Service Worker enregistré — version: tontine-v3');
-
-      // Quand un nouveau SW est trouvé, forcer son activation immédiate
-      reg.addEventListener('updatefound', () => {
-        logInfo('Nouveau Service Worker détecté → activation en cours…');
-        const newWorker = reg.installing;
-        newWorker.addEventListener('statechange', () => {
-          logInfo('SW state: ' + newWorker.state);
-        });
-      });
-    }).catch(e => logErr('SW registration: '+e.message));
-
-    // Quand le nouveau SW prend le contrôle → recharger la page automatiquement
+    // Rechargement auto quand un nouveau SW prend le contrôle (onglets anciens inclus)
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if(refreshing) return;
       refreshing = true;
-      logInfo('Nouveau SW actif → rechargement automatique de la page…');
-      // Petit délai pour que les logs s'affichent
-      setTimeout(() => window.location.reload(true), 800);
+      logInfo('Nouveau SW actif → rechargement automatique…');
+      window.location.reload(true);
     });
+
+    function activateSW(reg){
+      // SW en attente → lui dire de s'activer immédiatement (sans attendre fermeture des onglets)
+      if(reg.waiting){
+        logInfo('SW en attente → activation immédiate');
+        reg.waiting.postMessage({type:'SKIP_WAITING'});
+      }
+      // SW qui s'installe → attendre qu'il soit prêt puis activer
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        logInfo('Nouveau SW détecté (state: '+sw.state+')');
+        sw.addEventListener('statechange', () => {
+          logInfo('SW state → '+sw.state);
+          if(sw.state === 'installed'){
+            logInfo('SW installé → activation immédiate');
+            sw.postMessage({type:'SKIP_WAITING'});
+          }
+        });
+      });
+    }
+
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      logOk('SW enregistré (tontine-v3)');
+      activateSW(reg);
+      // Vérifier aussi les mises à jour toutes les 60s (onglets longtemps ouverts)
+      setInterval(() => reg.update().then(() => activateSW(reg)), 60000);
+    }).catch(e => logErr('SW: '+e.message));
   }
 })();
 </script>

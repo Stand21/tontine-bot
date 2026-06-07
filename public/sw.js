@@ -46,6 +46,11 @@ self.addEventListener('fetch', e => {
   );
 });
 
+// Message depuis la page → activation immédiate du nouveau SW
+self.addEventListener('message', e => {
+  if(e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 // Push notifications
 self.addEventListener('push', e => {
   let data = { title: '🔔 Ma Tontine', body: 'Rappel de cotisation', url: '/' };
