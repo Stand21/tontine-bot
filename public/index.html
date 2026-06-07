@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#13213f">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ma Tontine">
+<title>Suivi de Tontine — Premium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#13213f;
+    --ink-2:#1d2d52;
+    --ivory:#f6f2e9;
+    --paper:#fbf9f3;
+    --card:#ffffff;
+    --gold:#bd9b46;
+    --gold-deep:#9c7e30;
+    --gold-soft:#f4ebd2;
+    --emerald:#2f8161;
+    --emerald-soft:#e3f1ea;
+    --muted:#6c7488;
+    --line:#e7e1d4;
+    --line-strong:#d8d1c0;
+    --shadow:0 1px 2px rgba(19,33,63,.04),0 8px 30px rgba(19,33,63,.06);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:'Manrope',-apple-system,system-ui,sans-serif;
+    background:
+      radial-gradient(120% 70% at 100% 0%, #eef3ff 0%, transparent 45%),
+      radial-gradient(120% 60% at 0% 0%, var(--gold-soft) 0%, transparent 40%),
+      var(--ivory);
+    color:var(--ink);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) 0 calc(40px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:22px 16px 0}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  /* Header */
+  header.hero{
+    background:linear-gradient(155deg,var(--ink) 0%,var(--ink-2) 100%);
+    color:#fff;border-radius:24px;padding:26px 22px 24px;position:relative;overflow:hidden;
+    box-shadow:0 20px 50px rgba(19,33,63,.22);
+  }
+  header.hero::after{
+    content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;
+    background:radial-gradient(circle,rgba(189,155,70,.45),transparent 65%);
+  }
+  .eyebrow{font-size:.72rem;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .hero h1{font-family:'Fraunces',serif;font-weight:600;font-size:1.85rem;line-height:1.1;margin:.35rem 0 .15rem;letter-spacing:-.01em}
+  .hero p{margin:0;color:#c5cde0;font-size:.92rem}
+  .pill-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;position:relative;z-index:1}
+  .pill{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);padding:7px 12px;border-radius:999px;font-size:.78rem;font-weight:600;color:#eaeefb}
+  .pill b{color:var(--gold);font-weight:800}
+
+  /* Progress */
+  .progress-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 16px;margin-top:16px;box-shadow:var(--shadow)}
+  .progress-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .progress-top .lbl{font-size:.8rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+  .progress-top .val{font-family:'Fraunces',serif;font-size:1.3rem;font-weight:600}
+  .bar{height:12px;background:var(--ivory);border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--emerald),#3da179);transition:width .5s cubic-bezier(.22,1,.36,1)}
+
+  /* Stats grid */
+  .section-title{display:flex;align-items:center;gap:10px;margin:28px 4px 12px;font-family:'Fraunces',serif;font-size:1.25rem;font-weight:600}
+  .section-title .dot{width:9px;height:9px;border-radius:50%;background:var(--gold)}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .stat .k{font-size:.74rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:6px}
+  .stat .v{font-family:'Fraunces',serif;font-size:1.5rem;font-weight:600;margin-top:6px;letter-spacing:-.01em}
+  .stat .sub{font-size:.74rem;color:var(--muted);margin-top:2px}
+  .stat.accent{background:linear-gradient(150deg,#fff,var(--gold-soft))}
+  .stat.accent .v{color:var(--gold-deep)}
+  .stat.good .v{color:var(--emerald)}
+  .stat.net .v.pos{color:var(--emerald)} .stat.net .v.neg{color:#b4451f}
+  .swatch{width:8px;height:8px;border-radius:2px;display:inline-block}
+
+  /* Reception editor */
+  .recv-edit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px dashed var(--line-strong);border-radius:14px;padding:12px 14px;margin-top:12px}
+  .recv-edit label{font-size:.82rem;color:var(--muted);font-weight:600}
+  .recv-edit input{font-family:'Manrope';font-variant-numeric:tabular-nums;font-weight:700;font-size:1rem;color:var(--ink);border:1px solid var(--line-strong);border-radius:10px;padding:8px 10px;width:130px;text-align:right;background:var(--paper)}
+  .recv-edit input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+  .recv-edit small{color:var(--muted);font-size:.72rem;flex-basis:100%}
+
+  /* Weeks */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:0 4px 12px;font-size:.78rem;color:var(--muted);font-weight:600}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .week{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 15px;margin-bottom:11px;box-shadow:var(--shadow);transition:transform .15s ease,box-shadow .15s ease}
+  .week.done{border-color:#cfe6da;background:linear-gradient(180deg,#fff, #f4faf6)}
+  .week.recv{border-color:var(--gold);background:linear-gradient(180deg,#fff,var(--gold-soft))}
+  .week-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .week-id{display:flex;align-items:center;gap:11px;min-width:0}
+  .wnum{flex:none;width:38px;height:38px;border-radius:11px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800;font-size:.95rem;font-variant-numeric:tabular-nums}
+  .week.done .wnum{background:var(--emerald)}
+  .week.recv .wnum{background:var(--gold-deep)}
+  .week-date .d{font-weight:800;font-size:.98rem;letter-spacing:-.01em}
+  .week-date .s{font-size:.74rem;color:var(--muted);font-weight:600}
+  .week-amt{text-align:right;flex:none}
+  .week-amt .a{font-family:'Fraunces',serif;font-weight:600;font-size:1.05rem;line-height:1}
+  .week-amt .c{font-size:.72rem;color:var(--muted);font-weight:600;margin-top:3px}
+  .names{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:13px}
+  .chip{border:1.5px solid var(--line-strong);background:var(--paper);border-radius:11px;padding:9px 4px;font-weight:700;font-size:.82rem;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .14s ease;user-select:none}
+  .chip .box{width:18px;height:18px;border-radius:6px;border:2px solid var(--line-strong);display:grid;place-items:center;transition:all .14s ease}
+  .chip .box svg{width:11px;height:11px;opacity:0;transform:scale(.5);transition:all .14s ease}
+  .chip.on{background:var(--emerald-soft);border-color:var(--emerald);color:var(--emerald)}
+  .chip.on .box{background:var(--emerald);border-color:var(--emerald)}
+  .chip.on .box svg{opacity:1;transform:scale(1)}
+  .chip:active{transform:scale(.94)}
+  .recv-banner{margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(189,155,70,.12);border:1px solid var(--gold);border-radius:12px;padding:10px 12px}
+  .recv-banner .txt{font-size:.82rem;font-weight:700;color:var(--gold-deep);display:flex;align-items:center;gap:7px}
+  .recv-banner .amt{font-family:'Fraunces',serif;font-weight:600;font-size:.95rem;color:var(--gold-deep)}
+  .recv-toggle{flex:none;border:none;background:var(--gold-deep);color:#fff;font-weight:700;font-size:.78rem;padding:8px 13px;border-radius:9px;cursor:pointer;transition:filter .15s}
+  .recv-toggle.got{background:var(--emerald)}
+  .recv-toggle:active{filter:brightness(.92)}
+  .obs{margin-top:11px}
+  .obs input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 11px;font-family:'Manrope';font-size:.85rem;color:var(--ink)}
+  .obs input::placeholder{color:#aab0bf}
+  .obs input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+
+  .footer{text-align:center;color:var(--muted);font-size:.74rem;margin-top:26px;line-height:1.6}
+  .reset{margin-top:14px;text-align:center}
+  .reset button{background:none;border:1px solid var(--line-strong);color:var(--muted);font-weight:600;font-size:.78rem;padding:8px 16px;border-radius:999px;cursor:pointer}
+  .reset button:active{background:var(--ivory)}
+
+  /* Motivation + countdown */
+  .duo{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
+  .moti{background:linear-gradient(150deg,var(--ink),var(--ink-2));color:#fff;border-radius:var(--radius);padding:18px 18px;box-shadow:0 14px 34px rgba(19,33,63,.18);position:relative;overflow:hidden}
+  .moti::before{content:"\201C";position:absolute;right:14px;top:-10px;font-family:'Fraunces',serif;font-size:6rem;color:rgba(189,155,70,.22);line-height:1}
+  .moti .tag{font-size:.7rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .moti .q{font-family:'Fraunces',serif;font-size:1.18rem;line-height:1.32;margin-top:8px;position:relative;z-index:1}
+  .count{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .count .big{font-family:'Fraunces',serif;font-weight:600;font-size:2.6rem;line-height:.9;color:var(--gold-deep);font-variant-numeric:tabular-nums;text-align:center;min-width:64px}
+  .count .big small{display:block;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:6px}
+  .count .meta .t{font-weight:800;font-size:.98rem}
+  .count .meta .s{font-size:.82rem;color:var(--muted);font-weight:600;margin-top:2px}
+  .count.urgent .big{color:#b4451f}
+  .count.today{background:linear-gradient(150deg,#fff,var(--gold-soft));border-color:var(--gold)}
+
+  /* Action bar */
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .act{border:none;border-radius:14px;padding:14px 12px;font-family:'Manrope';font-weight:700;font-size:.86rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .14s,filter .14s;box-shadow:var(--shadow)}
+  .act:active{transform:scale(.97)}
+  .act.wa{background:#1faa56;color:#fff}
+  .act.bell{background:var(--ink);color:#fff}
+  .act.bell.on{background:var(--emerald)}
+  .act.full{grid-column:1/-1}
+  .hint{font-size:.74rem;color:var(--muted);margin-top:8px;text-align:center;line-height:1.5}
+
+  @media(min-width:560px){
+    .stats{grid-template-columns:repeat(3,1fr)}
+    .hero h1{font-size:2.1rem}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Suivi de Cotisation</div>
+    <h1>Ma Tontine — 19 Semaines</h1>
+    <p>4 parts · 10 000 FCFA / part · bénéficiaire des 4 derniers tours</p>
+    <div class="pill-row">
+      <div class="pill">Versement / semaine <b>40 000 F</b></div>
+      <div class="pill">Engagement total <b>760 000 F</b></div>
+      <div class="pill">Tours reçus <b>4</b></div>
+    </div>
+  </header>
+
+  <div class="progress-card">
+    <div class="progress-top">
+      <span class="lbl">Progression des versements</span>
+      <span class="val num" id="progLabel">0 %</span>
+    </div>
+    <div class="bar"><i id="progBar"></i></div>
+  </div>
+
+  <!-- MOTIVATION + COUNTDOWN -->
+  <div class="duo">
+    <div class="moti">
+      <div class="tag">Boost du jour</div>
+      <div class="q" id="motiText">…</div>
+    </div>
+    <div class="count" id="countCard">
+      <div class="big num"><span id="cdDays">–</span><small id="cdUnit">jours</small></div>
+      <div class="meta">
+        <div class="t" id="cdTitle">Prochaine échéance</div>
+        <div class="s" id="cdSub">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="act bell" id="bellBtn">🔔 Activer les rappels</button>
+    <button class="act wa" id="waBtn">🟢 Mon point sur WhatsApp</button>
+  </div>
+  <div class="hint" id="bellHint">Rappels dans l'app quand elle est ouverte. Pour des notifications WhatsApp chaque jour même app fermée, déploie le mini-serveur fourni.</div>
+
+  <!-- STATS -->
+  <div class="section-title"><span class="dot"></span>📊 Résumé automatique</div>
+  <div class="stats" id="stats"></div>
+
+  <div class="recv-edit">
+    <label for="recvAmt">Montant reçu par tour&nbsp;:</label>
+    <input id="recvAmt" class="num" type="number" inputmode="numeric" step="1000" value="190000">
+    <span style="font-weight:700;color:var(--muted)">FCFA</span>
+    <small>Par défaut 190 000 F (cagnotte de 19 parts × 10 000 F). Modifie cette valeur selon le nombre réel de participants à ta tontine.</small>
+  </div>
+
+  <!-- WEEKS -->
+  <div class="section-title"><span class="dot"></span>🗓️ Tableau semaine par semaine</div>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--emerald)"></i> Semaine soldée</span>
+    <span><i class="swatch" style="background:var(--gold)"></i> Tour de réception</span>
+    <span>Touche un nom pour cocher 10 000 F</span>
+  </div>
+  <div id="weeks"></div>
+
+  <div class="reset">
+    <button id="resetBtn">↺ Réinitialiser le suivi</button>
+  </div>
+
+  <div class="footer">
+    Données sauvegardées automatiquement sur cet appareil.<br>
+    Une tontine est un mécanisme d'épargne&nbsp;: le bénéfice net final est nul. Recevoir les derniers tours = position d'épargnant discipliné.
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const PER_NAME = 10000;
+  const TOTAL_WEEKS = 19;
+  const NAMES = ["Nom 1","Nom 2","Nom 3","Nom 4"];
+  const DATES = ["07/06/2026","14/06/2026","21/06/2026","28/06/2026","05/07/2026",
+    "12/07/2026","19/07/2026","26/07/2026","02/08/2026","09/08/2026","16/08/2026",
+    "23/08/2026","30/08/2026","06/09/2026","13/09/2026","20/09/2026","27/09/2026",
+    "04/10/2026","11/10/2026"];
+  // reception map: week index (0-based) -> beneficiary name index
+  const RECEPTIONS = {15:0, 16:1, 17:2, 18:3}; // weeks 16-19 => Nom 1..4
+
+  const STORE_KEY = "tontine_premium_v1";
+  let state = load();
+
+  function defaultState(){
+    return { paid:{}, received:{}, obs:{}, recvAmt:190000 };
+  }
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(raw){ const s = JSON.parse(raw); return Object.assign(defaultState(), s); }
+    }catch(e){}
+    return defaultState();
+  }
+  function save(){
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  const fmt = n => Math.round(n).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g,' ') + ' F';
+  const check = '<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  const weeksEl = document.getElementById('weeks');
+  const statsEl = document.getElementById('stats');
+  const recvInput = document.getElementById('recvAmt');
+  recvInput.value = state.recvAmt;
+
+  function paidCount(w){
+    let c=0; for(let n=0;n<4;n++){ if(state.paid[w+'-'+n]) c++; } return c;
+  }
+
+  function render(){
+    // weeks
+    weeksEl.innerHTML='';
+    let cumul = 0;
+    for(let w=0; w<TOTAL_WEEKS; w++){
+      const pc = paidCount(w);
+      const amt = pc*PER_NAME;
+      cumul += amt;
+      const theoric = (w+1)*40000;
+      const isRecv = RECEPTIONS.hasOwnProperty(w);
+      const done = pc===4;
+
+      const card = document.createElement('div');
+      card.className = 'week'+(isRecv?' recv':'')+(done&&!isRecv?' done':'');
+
+      let chips='';
+      for(let n=0;n<4;n++){
+        const on = !!state.paid[w+'-'+n];
+        chips += `<div class="chip${on?' on':''}" data-w="${w}" data-n="${n}">
+            <span class="box">${check}</span>${NAMES[n]}</div>`;
+      }
+
+      let banner='';
+      if(isRecv){
+        const benef = NAMES[RECEPTIONS[w]];
+        const got = !!state.received[w];
+        banner = `<div class="recv-banner">
+            <span class="txt">🏆 ${benef} reçoit · <span class="amt num">${fmt(state.recvAmt)}</span></span>
+            <button class="recv-toggle${got?' got':''}" data-recv="${w}">${got?'✓ Reçu':'Marquer reçu'}</button>
+          </div>`;
+      }
+
+      const obsVal = (state.obs[w]||'').replace(/"/g,'&quot;');
+
+      card.innerHTML = `
+        <div class="week-head">
+          <div class="week-id">
+            <div class="wnum">${w+1}</div>
+            <div class="week-date">
+              <div class="d">${DATES[w]}</div>
+              <div class="s">Semaine ${w+1} / ${TOTAL_WEEKS}</div>
+            </div>
+          </div>
+          <div class="week-amt">
+            <div class="a num">${fmt(amt)}</div>
+            <div class="c num">cumulé ${fmt(cumul)} / ${fmt(theoric)}</div>
+          </div>
+        </div>
+        <div class="names">${chips}</div>
+        ${banner}
+        <div class="obs"><input type="text" data-obs="${w}" value="${obsVal}" placeholder="Observations (ex : retard, partiel…)"></div>
+      `;
+      weeksEl.appendChild(card);
+    }
+    renderStats();
+    bind();
+  }
+
+  function renderStats(){
+    let totalVerse=0, fullWeeks=0;
+    for(let w=0;w<TOTAL_WEEKS;w++){
+      const pc=paidCount(w);
+      totalVerse += pc*PER_NAME;
+      if(pc===4) fullWeeks++;
+    }
+    const engagement = TOTAL_WEEKS*40000; // 760 000
+    const restant = engagement - totalVerse;
+    const semRest = TOTAL_WEEKS - fullWeeks;
+
+    let recupere=0; for(const w in state.received){ if(state.received[w]) recupere += state.recvAmt; }
+    const aRecup = (4*state.recvAmt) - recupere;
+    const net = recupere - totalVerse;
+
+    const pct = Math.round((totalVerse/engagement)*100);
+    document.getElementById('progBar').style.width = pct+'%';
+    document.getElementById('progLabel').textContent = pct+' %';
+
+    const netCls = net>=0?'pos':'neg';
+    const items = [
+      {k:'Semaines payées', v:fullWeeks, sub:'sur '+TOTAL_WEEKS, cls:'good'},
+      {k:'Semaines restantes', v:semRest, sub:'à cotiser', cls:''},
+      {k:'Total versé', v:fmt(totalVerse), sub:'depuis le début', cls:'good'},
+      {k:'Total restant', v:fmt(restant), sub:'à verser', cls:''},
+      {k:'Déjà récupéré', v:fmt(recupere), sub:'tours encaissés', cls:'accent'},
+      {k:'Encore à récupérer', v:fmt(aRecup), sub:'tours à venir', cls:'accent'},
+      {k:'Bénéfice net actuel', v:fmt(net), sub: net<0?'tu as avancé l\'argent':'position équilibrée', cls:'net', netCls:netCls, full:true},
+    ];
+    statsEl.innerHTML = items.map(it=>{
+      const vcls = it.netCls ? 'v '+it.netCls : 'v';
+      const style = it.full ? 'grid-column:1/-1' : '';
+      return `<div class="stat ${it.cls}" style="${style}">
+          <div class="k">${it.k}</div>
+          <div class="${vcls} num">${it.v}</div>
+          <div class="sub">${it.sub}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function bind(){
+    document.querySelectorAll('.chip').forEach(el=>{
+      el.onclick=()=>{
+        const w=el.dataset.w, n=el.dataset.n, key=w+'-'+n;
+        state.paid[key] = !state.paid[key];
+        save(); render();
+      };
+    });
+    document.querySelectorAll('[data-recv]').forEach(el=>{
+      el.onclick=()=>{
+        const w=el.dataset.recv;
+        state.received[w] = !state.received[w];
+        save(); render();
+      };
+    });
+    document.querySelectorAll('[data-obs]').forEach(el=>{
+      el.oninput=()=>{ state.obs[el.dataset.obs]=el.value; save(); };
+    });
+  }
+
+  recvInput.addEventListener('input', ()=>{
+    const v = parseInt(recvInput.value,10);
+    state.recvAmt = isNaN(v)?0:v;
+    save(); renderStats();
+  });
+
+  document.getElementById('resetBtn').onclick=()=>{
+    if(confirm('Réinitialiser tout le suivi ? Cette action est définitive.')){
+      state = defaultState();
+      recvInput.value = state.recvAmt;
+      save(); render();
+    }
+  };
+
+  render();
+})();
+
+/* ===== Motivation · Compte à rebours · Rappels · WhatsApp ===== */
+(function(){
+  "use strict";
+  const DATES=["07/06/2026","14/06/2026","21/06/2026","28/06/2026","05/07/2026",
+    "12/07/2026","19/07/2026","26/07/2026","02/08/2026","09/08/2026","16/08/2026",
+    "23/08/2026","30/08/2026","06/09/2026","13/09/2026","20/09/2026","27/09/2026",
+    "04/10/2026","11/10/2026"];
+  const TOTAL=19, WEEKLY=40000, ENGAGEMENT=760000, PER=10000;
+  const REMIND_HOURS=[8,13,20]; // 3 rappels / jour
+  const fmt=n=>Math.round(n).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g,' ')+' F';
+
+  const MOTI=[
+    "Chaque versement est une brique de ta liberté financière. Pose-la aujourd'hui.",
+    "19 semaines de discipline = une habitude qui te suivra toute la vie.",
+    "Tu ne cotises pas pour les autres : tu te paies d'abord toi-même.",
+    "La régularité bat l'intensité. Verse, encore et encore.",
+    "Ceux qui finissent leurs objectifs sont ceux qui ne sautent pas une semaine.",
+    "Aujourd'hui, 40 000 F. Demain, la fierté d'avoir tenu.",
+    "Ton futur toi te remerciera pour la semaine que tu boucles maintenant.",
+    "Pas d'excuse cette semaine : l'objectif est clair, la date est posée.",
+    "La tontine récompense la constance, pas le talent. Sois constant.",
+    "Une semaine cochée, c'est une promesse tenue envers toi-même.",
+    "Termine vite, termine fort : chaque tour rapproche ta réception.",
+    "Le plus dur, c'est de commencer. Tu as déjà commencé. Continue.",
+    "Discipline aujourd'hui, récolte aux 4 derniers tours. Tiens le cap.",
+    "Ne laisse aucune semaine vide : le vide casse l'élan.",
+    "Tu construis un capital ET un caractère. Coche ta semaine.",
+    "Objectif 100 %. Pas 90. Cent. Reste sur la ligne."
+  ];
+
+  function parse(d){const p=d.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}
+  function startOfDay(dt){return new Date(dt.getFullYear(),dt.getMonth(),dt.getDate());}
+  function dailyIndex(){return Math.floor(Date.now()/86400000);}
+
+  function readState(){try{return JSON.parse(localStorage.getItem('tontine_premium_v1'))||{};}catch(e){return{};}}
+  function progress(){
+    const s=readState(),paid=s.paid||{};let verse=0,full=0;
+    for(let w=0;w<TOTAL;w++){let c=0;for(let n=0;n<4;n++)if(paid[w+'-'+n])c++;verse+=c*PER;if(c===4)full++;}
+    return {verse,full,rest:ENGAGEMENT-verse,semRest:TOTAL-full,pct:Math.round(verse/ENGAGEMENT*100)};
+  }
+
+  // Countdown
+  function nextDeadline(){
+    const today=startOfDay(new Date());
+    for(let i=0;i<DATES.length;i++){
+      const d=startOfDay(parse(DATES[i]));
+      const diff=Math.round((d-today)/86400000);
+      if(diff>=0) return {idx:i,date:DATES[i],diff};
+    }
+    return null;
+  }
+  function renderCountdown(){
+    const nd=nextDeadline(),card=document.getElementById('countCard');
+    const days=document.getElementById('cdDays'),unit=document.getElementById('cdUnit'),
+          title=document.getElementById('cdTitle'),sub=document.getElementById('cdSub');
+    card.classList.remove('urgent','today');
+    if(!nd){title.textContent="Cotisation terminée 🎉";sub.textContent="Bravo, les 19 semaines sont passées.";days.textContent="✓";unit.textContent="fini";return;}
+    if(nd.diff===0){days.textContent="0";unit.textContent="aujourd'hui";title.textContent=`Versement aujourd'hui · Semaine ${nd.idx+1}`;sub.textContent=`Objectif : verser ${fmt(WEEKLY)} (4 noms).`;card.classList.add('today','urgent');}
+    else{days.textContent=nd.diff;unit.textContent=nd.diff>1?"jours":"jour";title.textContent=`Prochaine échéance · Semaine ${nd.idx+1}`;sub.textContent=`Le ${nd.date} — prépare ${fmt(WEEKLY)}.`;if(nd.diff<=2)card.classList.add('urgent');}
+  }
+
+  document.getElementById('motiText').textContent=MOTI[dailyIndex()%MOTI.length];
+  renderCountdown();
+
+  // WhatsApp share — composes current status as a wa.me message
+  document.getElementById('waBtn').addEventListener('click',()=>{
+    const p=progress(),nd=nextDeadline();
+    const moti=MOTI[dailyIndex()%MOTI.length];
+    let echeance = nd ? (nd.diff===0?`📅 Versement AUJOURD'HUI (Semaine ${nd.idx+1}) — ${fmt(WEEKLY)} à verser !`
+                                    :`📅 Prochaine échéance : ${nd.date} (Semaine ${nd.idx+1}), dans ${nd.diff} j.`)
+                      : "🎉 Cotisation terminée !";
+    const msg=`💰 *MA TONTINE — Point du jour*\n\n`+
+      `📊 Progression : *${p.pct}%*\n`+
+      `✅ Semaines soldées : ${p.full}/${TOTAL}\n`+
+      `💵 Total versé : ${fmt(p.verse)}\n`+
+      `⏳ Reste à verser : ${fmt(p.rest)}\n\n`+
+      `${echeance}\n\n`+
+      `🔥 ${moti}`;
+    window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+  });
+
+  // In-app reminders (notifications while the page is open)
+  const RKEY='tontine_reminders_on', FKEY='tontine_lastfire';
+  const bell=document.getElementById('bellBtn'),hint=document.getElementById('bellHint');
+  function setBell(on){
+    if(on){bell.classList.add('on');bell.textContent='🔔 Rappels activés';
+      hint.textContent="Rappels actifs quand l'app est ouverte (8h · 13h · 20h). Garde-la épinglée à l'écran d'accueil. WhatsApp = canal fiable même fermée (voir mini-serveur).";}
+    else{bell.classList.remove('on');bell.textContent='🔔 Activer les rappels';}
+  }
+  function notify(){
+    const p=progress(),nd=nextDeadline();
+    const head = nd&&nd.diff===0 ? "🚨 Versement AUJOURD'HUI !" : (nd?`⏳ Échéance dans ${nd.diff} j`:"🎉 Tontine terminée");
+    const body = `${MOTI[dailyIndex()%MOTI.length]}\n(${p.pct}% — ${p.full}/${TOTAL} semaines)`;
+    try{new Notification(head,{body,icon:'icon.png',badge:'icon.png'});}catch(e){}
+  }
+  bell.addEventListener('click',async()=>{
+    if(!('Notification'in window)){alert("Ton navigateur ne supporte pas les notifications. Utilise plutôt WhatsApp/Telegram via le mini-serveur.");return;}
+    if(localStorage.getItem(RKEY)==='1'){localStorage.setItem(RKEY,'0');setBell(false);return;}
+    const perm=await Notification.requestPermission();
+    if(perm==='granted'){localStorage.setItem(RKEY,'1');setBell(true);notify();}
+    else hint.textContent="Notifications refusées. Tu peux les réautoriser dans les réglages du navigateur, ou passer par WhatsApp/Telegram.";
+  });
+  setBell(localStorage.getItem(RKEY)==='1');
+  // poll: fire once per scheduled hour per day, only when page open
+  setInterval(()=>{
+    if(localStorage.getItem(RKEY)!=='1')return;
+    const now=new Date(),h=now.getHours();
+    if(REMIND_HOURS.indexOf(h)===-1)return;
+    const slot=now.toDateString()+'-'+h;
+    if(localStorage.getItem(FKEY)===slot)return;
+    localStorage.setItem(FKEY,slot);notify();
+  },60000);
+
+  // PWA install support if served over http(s)
+  if('serviceWorker'in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
