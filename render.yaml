@@ -7,15 +7,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: TELEGRAM_TOKEN
+      - key: VAPID_PUBLIC_KEY
         sync: false
-      - key: TELEGRAM_CHAT_ID
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
       - key: NOTIFY_KEY
         sync: false
-      - key: WEBHOOK_SECRET
-        sync: false
-      - key: TZ
-        value: Africa/Abidjan
-      - key: RUN_CRON
-        value: "false"
